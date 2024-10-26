@@ -27,4 +27,4 @@ for step in steps:
 
 # Get Started button
 if st.button("Get Started"):
-    st.switch_page("pages/app2.py")
+    st.switch_page("pages/app.py")
