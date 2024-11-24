@@ -11,6 +11,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
 import time
 
 gif_path = "ML_back.gif"  # Replace with your GIF file name or path
@@ -51,7 +54,7 @@ uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
 st.sidebar.header("Model Selection")
 selected_models = st.sidebar.multiselect("Select models to train",
                                          ["Logistic Regression", "Decision Tree", "Random Forest", "SVM",
-                                          "K-Nearest Neighbors"])
+                                          "K-Nearest Neighbors", "Neural Network"])
 
 st.sidebar.header("Preprocessing Options")
 scaling = st.sidebar.checkbox("Scale Features")
@@ -74,6 +77,17 @@ if uploaded_file:
         data[data.columns] = scaler.fit_transform(data[data.columns])
 
 
+# Define the neural network model
+def create_neural_network(input_shape):
+    model = Sequential([
+        Dense(64, activation='relu', input_shape=(input_shape,)),
+        Dense(32, activation='relu'),
+        Dense(1, activation='sigmoid')
+    ])
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    return model
+
+
 # Model training function
 def train_model(model_name, X_train, X_test, y_train, y_test):
     start_time = time.time()
@@ -87,6 +101,23 @@ def train_model(model_name, X_train, X_test, y_train, y_test):
         model = SVC()
     elif model_name == "K-Nearest Neighbors":
         model = KNeighborsClassifier()
+    elif model_name == "Neural Network":
+        model = create_neural_network(X_train.shape[1])
+        model.fit(X_train, y_train, epochs=10, batch_size=32, verbose=0)
+        y_pred = (model.predict(X_test) > 0.5).astype("int32")
+        training_time = time.time() - start_time
+        accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred, average="weighted")
+        recall = recall_score(y_test, y_pred, average="weighted")
+        f1 = f1_score(y_test, y_pred, average="weighted")
+        return {
+            "model": model_name,
+            "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "time": training_time
+        }
 
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
@@ -108,8 +139,8 @@ def train_model(model_name, X_train, X_test, y_train, y_test):
 
 # Prepare dataset for training and store results in session state
 if uploaded_file:
-    X = data.drop(columns=["fraud"])  # Replace "fraud" with your actual target column name
-    y = data["fraud"]
+    X = data.drop(columns=["Class"])  # Replace "fraud" with your actual target column name
+    y = data["Class"]
     if y.dtype != 'int' and y.nunique() < 20:
         y = y.astype('category').cat.codes
 
@@ -128,19 +159,27 @@ if uploaded_file:
 def plot_comparison_chart(results_df):
     # Set the style
     sns.set_theme(style="whitegrid")
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 6))  # Adjust the figure size as needed
 
-    # Plot a bar chart for each metric
-    metrics = ["accuracy", "precision", "recall", "f1"]
-    results_df_melted = results_df.melt(id_vars="model", value_vars=metrics,
-                                        var_name="metric", value_name="value")
-    sns.barplot(data=results_df_melted, x="model", y="value", hue="metric", ax=ax)
+    # Plot a bar chart for accuracy only
+    sns.barplot(data=results_df, x="model", y="accuracy", ax=ax, palette="viridis")
 
     # Customize the plot
-    ax.set_title("Model Comparison by Metrics")
-    ax.set_ylabel("Metric Score")
+    ax.set_title("Model Comparison by Accuracy", pad=20)
+    ax.set_ylabel("Accuracy")
     ax.set_xlabel("Model")
-    ax.legend(title="Metrics")
+    ax.set_ylim(0, 1)  # Scale the y-axis to make differences more visible
+    plt.xticks(rotation=45, ha='right')  # Rotate x-axis labels
+
+    # Add accuracy values on top of the bars as percentages rounded to two decimal places
+    for p in ax.patches:
+        accuracy_percentage = f'{p.get_height() * 100:.2f}%'
+        ax.annotate(accuracy_percentage, (p.get_x() + p.get_width() / 2., p.get_height()),
+                    ha='center', va='center', xytext=(0, 9), textcoords='offset points')
+
+    # Remove the legend
+    if ax.get_legend() is not None:
+        ax.get_legend().remove()
 
     # Show plot in Streamlit
     st.pyplot(fig)
@@ -153,6 +192,7 @@ def plot_training_time(results_df):
     ax.set_title("Training Time per Model")
     ax.set_ylabel("Time (seconds)")
     ax.set_xlabel("Model")
+    plt.xticks(rotation=45, ha='right')
     st.pyplot(fig)
 
 
